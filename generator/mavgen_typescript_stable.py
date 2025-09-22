@@ -49,6 +49,16 @@ def generate_classes(f, msgs, xml):
         "double": "number",
         "char": "string",
     }
+    
+    f.write("""
+        export abstract class MAVLinkMessage {
+            public _message_id!: number;
+            public _message_name!: string;
+            public _crc_extra!: number;
+            public _message_fields!: [string, string, boolean][];
+            
+            constructor(public system_id: number, public component_id: number) {}
+        }""")
 
     # Write all classes
     for m in msgs:
