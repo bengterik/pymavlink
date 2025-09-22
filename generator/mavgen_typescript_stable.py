@@ -40,8 +40,7 @@ def generate_enums(dir, enums):
                 )
             f.write("}")
 
-
-def generate_classes(dir, registry, msgs, xml):
+def generate_classes(output_dir, registry, msgs, xml):
     print("Generating class definitions")
 
     ts_types = {
@@ -58,96 +57,74 @@ def generate_classes(dir, registry, msgs, xml):
         "char": "string",
     }
 
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
-
-    with open(registry, "w") as registry_f:
-        # registry_f.write("import {MAVLinkMessage} from 'node-mavlink';\n")
+    with open(output_dir + "/messages.ts", "w") as f:
+        # Write all imports for enums first
+        imported_enums = set()
         for m in msgs:
-            filename = m.name.replace("_", "-")
-            filename = filename.lower()
-
-            m.order_map = [0] * len(m.fieldnames)
-            for i in range(0, len(m.fieldnames)):
-                m.order_map[i] = m.ordered_fieldnames.index(m.fieldnames[i])
-
-            with open("{}/{}.ts".format(dir, filename), "w") as f:
-                if xml.wire_protocol_version == "1.0":
-                    raise Exception(
-                        "WireProtocolException", "Please use WireProtocol = 2.0 only."
-                    )
-
-                # f.write("import {MAVLinkMessage} from 'node-mavlink';\n")
-                # f.write("import {readInt64LE, readUInt64LE} from 'node-mavlink';\n")
-                registry_f.write(
-                    "import {{{}}} from './messages/{}';\n".format(
-                        camelcase(m.name), filename
-                    )
-                )
-                imported_enums = []
-                for enum in [field.enum for field in m.fields if field.enum != ""]:
-                    if enum not in imported_enums:
-                        f.write(
-                            "import {{{}}} from '../enums/{}';\n".format(
-                                camelcase(enum), enum.replace("_", "-").lower()
-                            )
-                        )
-                        imported_enums.append(enum)
-
-                f.write("/*\n{}\n*/\n".format(m.description.strip()))
-
-                f.write(
-                    "export class {} {{\n".format(camelcase(m.name))
-                )  # extends MAVLinkMessage
-
-                for field in m.fields:
-                    desc = field.description.strip()
-                    if len(desc.splitlines()) == 1 and len(desc) < 80:
-                        # single-line JSDoc
-                        f.write(f"\t/** {desc} */\n")
-                    else:
-                        # multi-line JSDoc
-                        f.write("/**\n")
-                        for line in desc.splitlines():
-                            f.write(f" * {line.strip()}\n")
-                        f.write(" */\n")
-
-                    if field.enum:
-                        f.write(f"\tpublic {field.name}!: {camelcase(field.enum)};\n")
-                    else:
-                        f.write(f"\tpublic {field.name}!: {ts_types[field.type]};\n")
-
-                    f.write("\n")
-
-                f.write("\tpublic _message_id: number = {};\n".format(m.id))
-                f.write("\tpublic _message_name: string = '{}';\n".format(m.name))
-                f.write("\tpublic _crc_extra: number = {};\n".format(m.crc_extra))
-
-                i = 0
-                f.write("\tpublic _message_fields: [string, string, boolean][] = [\n")
-                for fieldname in m.ordered_fieldnames:
-                    field = next(field for field in m.fields if field.name == fieldname)
-                    if m.extensions_start is not None and i >= m.extensions_start:
-                        extension = "true"
-                    else:
-                        extension = "false"
+            for field in m.fields:
+                if field.enum and field.enum not in imported_enums:
                     f.write(
-                        "\t\t['{}', '{}', {}],\n".format(
-                            field.name, field.type, extension
-                        )
+                        f"import {{ {camelcase(field.enum)} }} from './enums/{field.enum.replace('_', '-').lower()}';\n"
                     )
-                    i += 1
-                f.write("\t];\n".format("', '".join(m.ordered_fieldnames)))
+                    imported_enums.add(field.enum)
+        f.write("\n")
 
-                f.write("}")
+        # Write all classes
+        for m in msgs:
+            if xml.wire_protocol_version == "1.0":
+                raise Exception("WireProtocolException", "Please use WireProtocol = 2.0 only.")
 
+            # Class-level JSDoc
+            class_desc = m.description.strip()
+            if class_desc:
+                f.write("/**\n")
+                for line in class_desc.splitlines():
+                    f.write(f" * {line.strip()}\n")
+                f.write(" */\n")
+
+            f.write(f"export class {camelcase(m.name)} {{\n")
+
+            # Fields
+            for field in m.fields:
+                desc = field.description.strip()
+                if len(desc.splitlines()) == 1 and len(desc) < 80:
+                    f.write(f"\t/** {desc} */\n")
+                else:
+                    f.write("\t/**\n")
+                    for line in desc.splitlines():
+                        f.write(f"\t * {line.strip()}\n")
+                    f.write("\t */\n")
+
+                if field.enum:
+                    f.write(f"\tpublic {field.name}!: {camelcase(field.enum)};\n")
+                else:
+                    f.write(f"\tpublic {field.name}!: {ts_types[field.type]};\n")
+                f.write("\n")
+
+            # Metadata
+            f.write(f"\tpublic _message_id: number = {m.id};\n")
+            f.write(f"\tpublic _message_name: string = '{m.name}';\n")
+            f.write(f"\tpublic _crc_extra: number = {m.crc_extra};\n")
+
+            # Field definitions for MAVLink
+            f.write("\tpublic _message_fields: [string, string, boolean][] = [\n")
+            for i, fieldname in enumerate(m.ordered_fieldnames):
+                field = next(field for field in m.fields if field.name == fieldname)
+                extension = "true" if m.extensions_start is not None and i >= m.extensions_start else "false"
+                f.write(f"\t\t['{field.name}', '{field.type}', {extension}],\n")
+            f.write("\t];\n")
+
+            f.write("}\n\n")
+
+    # Registry
+    with open(registry, "w") as registry_f:
+        registry_f.write(f"import {{ {', '.join([camelcase(m.name) for m in msgs])} }} from './messages';\n\n")
         registry_f.write(
-            "export const messageRegistry: Array<[number, new (system_id: number, component_id: number) "
-            "=> MAVLinkMessage]> = [\n"
+            "export const messageRegistry: Array<[number, new (system_id: number, component_id: number) => MAVLinkMessage]> = [\n"
         )
         for m in msgs:
-            registry_f.write("\t[{}, {}],\n".format(m.id, camelcase(m.name)))
-        registry_f.write("];")
+            registry_f.write(f"\t[{m.id}, {camelcase(m.name)}],\n")
+        registry_f.write("];\n")
 
 
 def generate_tsconfig(basename):
@@ -161,11 +138,10 @@ def generate_tsconfig(basename):
         )
 
 
-def generate(basename, xml):
-    enums_dir = basename + "/enums"
-    messages_dir = basename + "/messages"
-    message_registry = basename + "/message-registry.ts"
-    os.makedirs(basename, exist_ok=True)
+def generate(base_dir, xml):
+    enums_dir = base_dir + "/enums"
+    message_registry = base_dir + "/message-registry.ts"
+    os.makedirs(base_dir, exist_ok=True)
     msgs = []
     enums = []
     filelist = []
@@ -175,5 +151,5 @@ def generate(basename, xml):
         filelist.append(os.path.basename(x.filename))
 
     generate_enums(enums_dir, enums)
-    generate_classes(messages_dir, message_registry, msgs, xml[0])
+    generate_classes(base_dir, message_registry, msgs, xml[0])
     # generate_tsconfig(basename)
