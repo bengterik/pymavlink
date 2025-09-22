@@ -95,30 +95,29 @@ def generate_classes(dir, registry, msgs, xml):
                         imported_enums.append(enum)
 
                 f.write("/*\n{}\n*/\n".format(m.description.strip()))
-                for field in m.fields:
-                    f.write(
-                        "// {} {} {}\n".format(
-                            field.name, field.description.strip(), field.type
-                        )
-                    )
 
                 f.write(
                     "export class {} {{\n".format(camelcase(m.name))
                 )  # extends MAVLinkMessage
 
                 for field in m.fields:
-                    if field.enum:
-                        f.write(
-                            "\tpublic {}!: {};\n".format(
-                                field.name, camelcase(field.enum)
-                            )
-                        )
+                    desc = field.description.strip()
+                    if len(desc.splitlines()) == 1 and len(desc) < 80:
+                        # single-line JSDoc
+                        f.write(f"\t/** {desc} */\n")
                     else:
-                        f.write(
-                            "\tpublic {}!: {};\n".format(
-                                field.name, ts_types[field.type]
-                            )
-                        )
+                        # multi-line JSDoc
+                        f.write("/**\n")
+                        for line in desc.splitlines():
+                            f.write(f" * {line.strip()}\n")
+                        f.write(" */\n")
+
+                    if field.enum:
+                        f.write(f"\tpublic {field.name}!: {camelcase(field.enum)};\n")
+                    else:
+                        f.write(f"\tpublic {field.name}!: {ts_types[field.type]};\n")
+
+                    f.write("\n")
 
                 f.write("\tpublic _message_id: number = {};\n".format(m.id))
                 f.write("\tpublic _message_name: string = '{}';\n".format(m.name))
