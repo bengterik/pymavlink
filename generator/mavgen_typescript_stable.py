@@ -23,13 +23,71 @@ def generate_enums(f, enums):
     print("Generating enums")
 
     for e in enums:
-        f.write(f"/**\n * {e.description.strip()}\n */\n")
-        f.write(f"export enum {camelcase(e.name)} {{\n")
-        for entry in e.entry:
-            desc = entry.description.rstrip("\r").rstrip("\n").strip()
-            if desc:
-                f.write(f"\t/** {desc} */\n")
-            f.write(f"\t{entry.name} = {entry.value},\n")
+        if e.name == "MAV_CMD":
+            # Generate MAV_CMD enum and interfaces specially
+            generate_mav_cmd_interfaces(f, e)
+        else:
+            f.write(f"/**\n * {e.description.strip()}\n */\n")
+            f.write(f"export enum {camelcase(e.name)} {{\n")
+            for entry in e.entry:
+                desc = entry.description.rstrip("\r").rstrip("\n").strip()
+                if desc:
+                    f.write(f"\t/** {desc} */\n")
+                f.write(f"\t{entry.name} = {entry.value},\n")
+            f.write("}\n\n")
+
+        
+
+
+def generate_mav_cmd_interfaces(f, e):
+    """Generate MAV_CMD enum and corresponding typed interfaces."""
+    if e.name != "MAV_CMD":
+        return
+
+    # Enum first
+    f.write(f"/**\n * {e.description.strip()}\n */\n")
+    f.write(f"export enum {camelcase(e.name)} {{\n")
+    for entry in e.entry:
+        desc = entry.description.strip()
+        if desc:
+            f.write(f"\t/** {desc} */\n")
+        f.write(f"\t{entry.name} = {entry.value},\n")
+    f.write("}\n\n")
+
+    # Interfaces for each command entry
+    for entry in e.entry:
+        if not hasattr(entry, "param") or not entry.param:
+            continue
+
+        # Raw paramN interface
+        f.write(f"/** Raw MAVLink parameters for {entry.name} */\n")
+        f.write(f"export interface {camelcase(entry.name)}Raw {{\n")
+        for p in entry.param:
+            p = p.__dict__
+            f.write(f"\t/** {p['description'].strip()} */\n")
+            f.write(f"\tparam{p['index']}: number;\n")
+        f.write("}\n\n")
+
+        # Friendly interface
+        f.write(f"/** Friendly parameters for {entry.name} */\n")
+        f.write(f"export interface {camelcase(entry.name)} {{\n")
+        for p in entry.param:
+            p = p.__dict__
+            label = p['label'].strip().lower()
+            if not label or label.lower() == "empty":
+                continue
+            # TS-safe name: remove non-alphanumeric, start with lowercase
+            if not label or label.lower() == "empty":
+                continue
+            # Remove non-alphanumeric
+            prop_name = ''.join(c if c.isalnum() else '_' for c in label)
+            # Prefix with 'num' if it starts with a digit
+            if prop_name[0].isdigit():
+                prop_name = f"num{prop_name}"
+            # lowercase first character
+            prop_name = prop_name[0].lower() + prop_name[1:]
+            f.write(f"\t/** {p['description'].strip()} */\n")
+            f.write(f"\t{prop_name}: number;\n")
         f.write("}\n\n")
 
 
@@ -127,11 +185,24 @@ def generate_tsconfig(basename):
         )
 
 
+def generate_commands(f, commands):
+    print("Generating commands")
+
+    f.write("/**\n * MAVLink Commands\n */\n")
+    f.write("export enum MAV_CMD {\n")
+    for cmd in commands:
+        desc = cmd.description.strip()
+        if desc:
+            f.write(f"\t/** {desc} */\n")
+        f.write(f"\t{cmd.name} = {cmd.value},\n")
+    f.write("}\n\n")
+    
 def generate(base_dir, xml):
     output_file = os.path.join(base_dir, "mavlink.ts")
     msgs = []
     enums = []
     filelist = []
+
     for x in xml:
         msgs.extend(x.message)
         enums.extend(x.enum)
