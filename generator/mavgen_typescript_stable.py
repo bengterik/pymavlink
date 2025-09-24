@@ -11,7 +11,16 @@ from . import mavtemplate
 t = mavtemplate.MAVTemplate()
 
 
-def camelcase(str):
+# Formats command labels into valid field names
+def format_parameter(label):
+    # Replace non-alphanumeric characters with underscores
+    param_name = ''.join(c if c.isalnum() else '_' for c in label)
+    
+    # Ensures no keywords or leading digits
+    return f"p_{param_name.lower()}"
+
+# Convert snake_case to CamelCase
+def snake_to_camel(str):
     parts = str.split("_")
     result = ""
     for part in parts:
@@ -24,11 +33,10 @@ def generate_enums(f, enums):
 
     for e in enums:
         if e.name == "MAV_CMD":
-            # Generate MAV_CMD enum and interfaces specially
-            generate_mav_cmd_interfaces(f, e)
+            generate_mav_cmds(f, e)
         else:
             f.write(f"/**\n * {e.description.strip()}\n */\n")
-            f.write(f"export enum {camelcase(e.name)} {{\n")
+            f.write(f"export enum {snake_to_camel(e.name)} {{\n")
             for entry in e.entry:
                 desc = entry.description.rstrip("\r").rstrip("\n").strip()
                 if desc:
@@ -39,14 +47,14 @@ def generate_enums(f, enums):
         
 
 
-def generate_mav_cmd_interfaces(f, e):
+def generate_mav_cmds(f, e):
     """Generate MAV_CMD enum and corresponding typed interfaces."""
     if e.name != "MAV_CMD":
         return
 
-    # Enum first
+    # Enum with all command lookup
     f.write(f"/**\n * {e.description.strip()}\n */\n")
-    f.write(f"export enum {camelcase(e.name)} {{\n")
+    f.write(f"export enum {snake_to_camel(e.name)} {{\n")
     for entry in e.entry:
         desc = entry.description.strip()
         if desc:
@@ -54,44 +62,56 @@ def generate_mav_cmd_interfaces(f, e):
         f.write(f"\t{entry.name} = {entry.value},\n")
     f.write("}\n\n")
 
-    # Interfaces for each command entry
+    # Base class for command types
+    f.write("""
+/** Base class for all MAVLink commands. */
+export class BaseMavCmd {
+    public param1: number = 0;
+    public param2: number = 0;
+    public param3: number = 0;
+    public param4: number = 0;
+    public param5: number = 0;
+    public param6: number = 0;
+    public param7: number = 0;
+
+    constructor(params?: Partial<{ param1:number, param2:number, param3:number, param4:number, param5:number, param6:number, param7:number }>) {
+        if (params) {
+            Object.assign(this, params);
+        }
+    }
+}\n\n""")
+    
+
+    # Class/constructor for each command type
     for entry in e.entry:
-        if not hasattr(entry, "param") or not entry.param:
-            continue
+        f.write(f"/** {entry.description} */\n")
+        f.write(f"export class {snake_to_camel(entry.name)} extends BaseMavCmd {{\n")
 
-        # Raw paramN interface
-        f.write(f"/** Raw MAVLink parameters for {entry.name} */\n")
-        f.write(f"export interface {camelcase(entry.name)}Raw {{\n")
+        parameters = []
         for p in entry.param:
             p = p.__dict__
-            f.write(f"\t/** {p['description'].strip()} */\n")
-            f.write(f"\tparam{p['index']}: number;\n")
-        f.write("}\n\n")
+            label = p['label'].strip()
 
-        # Friendly interface
-        f.write(f"/** Friendly parameters for {entry.name} */\n")
-        f.write(f"export interface {camelcase(entry.name)} {{\n")
-        for p in entry.param:
-            p = p.__dict__
-            label = p['label'].strip().lower()
+            # Skip empty parameters
             if not label or label.lower() == "empty":
-                continue
-            # TS-safe name: remove non-alphanumeric, start with lowercase
-            if not label or label.lower() == "empty":
-                continue
-            # Remove non-alphanumeric
-            prop_name = ''.join(c if c.isalnum() else '_' for c in label)
-            # Prefix with 'num' if it starts with a digit
-            if prop_name[0].isdigit():
-                prop_name = f"num{prop_name}"
-            # lowercase first character
-            prop_name = prop_name[0].lower() + prop_name[1:]
-            f.write(f"\t/** {p['description'].strip()} */\n")
-            f.write(f"\t{prop_name}: number;\n")
+                continue            
+            parameters.append((label, p['index'], p['description'].strip()))
+        
+        # Make constructor
+        f.write("\tconstructor(")
+        f.write(', '.join(f"{format_parameter(name)}: number" for name, _, _ in parameters))
+        f.write(") {\n")
+        
+        f.write(f"\t\tsuper({{\n")
+        for name, index, _ in parameters:
+            f.write(f"\t\t\tparam{index}: {format_parameter(name)},\n")
+        f.write(f"\t\t}});\n")
+        f.write("\t}\n")
+
         f.write("}\n\n")
 
 
-def generate_classes(f, msgs, xml):
+def generate_messages(f, msgs, xml):
     print("Generating class definitions")
 
     ts_types = {
@@ -131,7 +151,7 @@ def generate_classes(f, msgs, xml):
                 f.write(f" * {line.strip()}\n")
             f.write(" */\n")
 
-        f.write(f"export class {camelcase(m.name)} extends MAVLinkMessage {{\n")
+        f.write(f"export class {snake_to_camel(m.name)} extends MAVLinkMessage {{\n")
 
         # Fields
         for field in m.fields:
@@ -145,7 +165,7 @@ def generate_classes(f, msgs, xml):
                 f.write("\t */\n")
 
             if field.enum:
-                f.write(f"\tpublic {field.name}!: {camelcase(field.enum)};\n")
+                f.write(f"\tpublic {field.name}!: {snake_to_camel(field.enum)};\n")
             else:
                 f.write(f"\tpublic {field.name}!: {ts_types[field.type]};\n")
             f.write("\n")
@@ -165,13 +185,19 @@ def generate_classes(f, msgs, xml):
 
         f.write("}\n\n")
 
-    # f.write(f"import {{ {', '.join([camelcase(m.name) for m in msgs])} }} from './messages';\n\n")
+
+def generate_message_registry(f, msgs):    
     f.write(
         "export const messageRegistry: Array<[number, new (system_id: number, component_id: number) => MAVLinkMessage]> = [\n"
     )
+    msg_entries = []
     for m in msgs:
-        f.write(f"\t[{m.id}, {camelcase(m.name)}],\n")
-    f.write("];\n")
+        msg_entries.append((m.id, snake_to_camel(m.name)))
+
+    for m in sorted(msg_entries, key=lambda x: x[0]):
+        f.write(f"\t[{m[0]}, {m[1]}],\n")
+    
+    f.write("];\n\n")
 
 
 def generate_tsconfig(basename):
@@ -210,5 +236,5 @@ def generate(base_dir, xml):
 
     with open(output_file, "w") as f:
         generate_enums(f, enums)
-        generate_classes(f, msgs, xml[0])
-    # generate_tsconfig(basename)
+        generate_messages(f, msgs, xml[0])
+        generate_message_registry(f, msgs)
