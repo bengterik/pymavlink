@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-parse a MAVLink protocol XML file and generate a Node.js typescript module implementation
+Generates TypeScript classes and enums from MAVLink protocol XML definitions.
+
+This script parses MAVLink XML files and produces TypeScript code for message types,
+enums, and command interfaces, enabling type-safe MAVLink communication in TypeScript projects.
 
 Based on original work Copyright Andrew Tridgell 2011
 Released under GNU GPL version 3 or later
