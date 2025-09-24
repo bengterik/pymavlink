@@ -94,10 +94,14 @@ export class BaseMavCmd {
         for p in entry.param:
             p = p.__dict__
             label = p['label'].strip()
-
+            
             # Skip empty parameters
-            if not label or label.lower() == "empty":
-                continue            
+            if not label:
+                # If empty leave out, else use a default name
+                if "empty" in p['description'].strip().lower():
+                    continue
+                else:
+                    label = "param" + str(p['index'])
             parameters.append((label, p['index'], p['description'].strip()))
         
         # Make constructor
