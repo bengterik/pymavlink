@@ -49,17 +49,18 @@ def generate_enums(f, enums):
     print("Generating enums")
 
     for e in enums:
-        if e.name == "MAV_CMD":
-            generate_mav_cmds(f, e)
-        else:
-            f.write(f"/**\n * {e.description.strip()}\n */\n")
-            f.write(f"export enum {snake_to_camel(e.name)} {{\n")
-            for entry in e.entry:
-                desc = entry.description.rstrip("\r").rstrip("\n").strip()
-                if desc:
-                    f.write(f"\t/** {desc} */\n")
-                f.write(f"\t{entry.name} = {entry.value},\n")
-            f.write("}\n\n")
+        f.write(f"/**\n * {e.description.strip()}\n */\n")
+        f.write(f"export enum {snake_to_camel(e.name)} {{\n")
+        for entry in e.entry:
+            desc = entry.description.rstrip("\r").rstrip("\n").strip()
+            if desc:
+                f.write(f"\t/** {desc} */\n")
+            f.write(f"\t{entry.name} = {entry.value},\n")
+        f.write("}\n\n")
+
+        # if e.name == "MAV_CMD":
+        #     generate_mav_cmds(f, e)
+
 
         
 
@@ -68,17 +69,6 @@ def generate_mav_cmds(f, e):
     """Generate MAV_CMD enum and corresponding typed interfaces."""
     if e.name != "MAV_CMD":
         return
-
-    # Enum with all command lookup
-    f.write(f"/**\n * {e.description.strip()}\n */\n")
-    f.write(f"export enum {snake_to_camel(e.name)} {{\n")
-    for entry in e.entry:
-        desc = entry.description.strip()
-        if desc:
-            f.write(f"\t/** {desc} */\n")
-        f.write(f"\t{entry.name} = {entry.value},\n")
-    f.write("}\n\n")
-
     # Base class for command types
     f.write("""
 /** Base class for all MAVLink commands. */
@@ -258,5 +248,5 @@ def generate(base_dir, xml):
     with open(output_file, "w") as f:
         generate_preamble(f, filelist)
         generate_enums(f, enums)
-        generate_messages(f, msgs, xml[0])
-        generate_message_registry(f, msgs)
+        # generate_messages(f, msgs, xml[0])
+        # generate_message_registry(f, msgs)
